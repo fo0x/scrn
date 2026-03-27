@@ -1,28 +1,23 @@
 {
-  "name": "smartshot",
-  "version": "0.1.0",
+  "name": "smartshot-web",
+  "version": "0.2.0",
   "private": true,
-  "main": "expo/AppEntry",
+  "type": "module",
   "scripts": {
-    "start": "expo start",
-    "android": "expo run:android",
-    "ios": "expo run:ios",
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "expo": "~53.0.0",
-    "expo-calendar": "~14.0.0",
-    "expo-file-system": "~18.0.0",
-    "expo-media-library": "~17.0.0",
-    "expo-notifications": "~0.31.0",
-    "expo-router": "~5.0.0",
-    "expo-sqlite": "~15.0.0",
-    "expo-status-bar": "~2.2.0",
-    "react": "19.0.0",
-    "react-native": "0.79.0"
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0"
   },
   "devDependencies": {
-    "@types/react": "~19.0.10",
-    "typescript": "~5.8.0"
+    "@types/react": "^19.1.2",
+    "@types/react-dom": "^19.1.2",
+    "@vitejs/plugin-react": "^5.0.0",
+    "typescript": "^5.8.2",
+    "vite": "^7.0.0"
   }
 }
