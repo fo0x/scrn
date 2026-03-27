@@ -5,7 +5,6 @@ export type ScreenshotType =
   | 'media'
   | 'receipt'
   | 'travel'
-  | 'idea'
   | 'unknown';
 
 export type SmartActionType =
@@ -15,15 +14,7 @@ export type SmartActionType =
   | 'add_to_watchlist'
   | 'track_expense'
   | 'save_trip_idea'
-  | 'capture_idea'
   | 'manual_review';
-
-export interface ScreenshotInput {
-  id: string;
-  fileName: string;
-  sourceUrl: string;
-  extractedText: string;
-}
 
 export interface ScreenshotInsight {
   type: ScreenshotType;
@@ -39,5 +30,4 @@ export interface SmartAction {
   actionType: SmartActionType;
   group: string;
   payload: Record<string, string>;
-  source: ScreenshotInput;
 }

@@ -1,0 +1,27 @@
+{
+  "expo": {
+    "name": "SmartShot",
+    "slug": "smartshot",
+    "version": "0.1.0",
+    "scheme": "smartshot",
+    "orientation": "portrait",
+    "platforms": ["ios", "android"],
+    "plugins": ["expo-router"],
+    "ios": {
+      "infoPlist": {
+        "NSPhotoLibraryUsageDescription": "SmartShot аналізує ваші скріншоти для створення корисних дій.",
+        "NSCalendarsUsageDescription": "SmartShot створює події календаря з ваших скріншотів."
+      }
+    },
+    "android": {
+      "permissions": [
+        "READ_MEDIA_IMAGES",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE"
+      ]
+    },
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
