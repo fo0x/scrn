@@ -1,105 +1,126 @@
-import type { ScreenshotInput, ScreenshotInsight, SmartAction } from '../types/domain';
+import * as Calendar from 'expo-calendar';
+import * as MediaLibrary from 'expo-media-library';
+import type { ScreenshotInsight, SmartAction } from '../types/domain';
 
-const SOCIAL_MARKERS = ['instagram', 'twitter', 'x.com', 'tiktok', 'linkedin', 'facebook'];
-const MEETING_MARKERS = ['meet', 'zoom', 'calendar', 'meeting', 'call at', 'tomorrow at'];
-const SHOPPING_MARKERS = ['shop', 'outfit', 'look', 'price', '$', 'uah', 'cart'];
-const MEDIA_MARKERS = ['netflix', 'spotify', 'youtube', 'movie', 'playlist', 'album'];
-const RECEIPT_MARKERS = ['receipt', 'invoice', 'check', 'tax', 'total'];
-const TRAVEL_MARKERS = ['flight', 'boarding', 'hotel', 'airbnb', 'booking', 'trip'];
-const IDEA_MARKERS = ['idea', 'thread', 'note to self', 'concept', 'startup'];
-
-export function processScreenshotInputs(inputs: ScreenshotInput[]): SmartAction[] {
-  return inputs
-    .map((input, index) => {
-      const insight = detectScreenshotIntent(input);
-      return toSmartAction(insight, input, index);
-    })
-    .sort((a, b) => b.payload.priorityScore.localeCompare(a.payload.priorityScore));
+interface ScreenshotAsset {
+  id: string;
+  filename?: string;
+  uri: string;
 }
 
-function detectScreenshotIntent(input: ScreenshotInput): ScreenshotInsight {
-  const marker = `${input.fileName} ${input.sourceUrl} ${input.extractedText}`.toLowerCase();
+export async function processLatestScreenshots(limit = 25): Promise<SmartAction[]> {
+  const mediaPermission = await MediaLibrary.requestPermissionsAsync();
+  if (!mediaPermission.granted) {
+    throw new Error('Потрібен доступ до фото для аналізу скріншотів.');
+  }
 
-  if (hasAny(marker, SOCIAL_MARKERS)) {
+  const assets = await loadScreenshotAssets(limit);
+
+  const calendarPermission = await Calendar.requestCalendarPermissionsAsync();
+  const canWriteCalendar = calendarPermission.granted;
+
+  const insights = await Promise.all(assets.map((asset) => detectScreenshotIntent(asset)));
+  const actions = insights.map((insight, index) => toSmartAction(insight, index));
+
+  if (!canWriteCalendar) {
+    return actions.map((action) =>
+      action.actionType === 'create_calendar_event'
+        ? {
+            ...action,
+            description: `${action.description} (Дозвіл до календаря не видано — дія в черзі)`
+          }
+        : action
+    );
+  }
+
+  return actions;
+}
+
+async function loadScreenshotAssets(limit: number): Promise<ScreenshotAsset[]> {
+  const album = await MediaLibrary.getAlbumAsync('Screenshots');
+
+  const page = await MediaLibrary.getAssetsAsync({
+    mediaType: ['photo'],
+    sortBy: [['creationTime', false]],
+    first: limit,
+    album
+  });
+
+  return page.assets.map((asset) => ({
+    id: asset.id,
+    filename: asset.filename,
+    uri: asset.uri
+  }));
+}
+
+async function detectScreenshotIntent(asset: ScreenshotAsset): Promise<ScreenshotInsight> {
+  // Тут можна підключити OCR + мультимодальну LLM (наприклад GPT-4.1/4o vision) через API.
+  // Для демо використовується швидка евристика по назві файлу.
+  const marker = `${asset.filename ?? ''} ${asset.uri}`.toLowerCase();
+
+  if (marker.includes('instagram') || marker.includes('twitter') || marker.includes('tiktok')) {
     return {
       type: 'social_post',
-      confidence: 0.9,
-      extractedText: summarize(input.extractedText, 'Пост із соцмережі перетворено на текстову чернетку.'),
+      confidence: 0.89,
+      extractedText: 'Знайдений пост із соцмережі. Згенеровано текстову версію для чернетки.',
       entities: {
-        network: SOCIAL_MARKERS.find((item) => marker.includes(item)) ?? 'social',
-        priorityScore: '90'
+        network: marker.includes('instagram') ? 'Instagram' : 'Соцмережа'
       }
     };
   }
 
-  if (hasAny(marker, MEETING_MARKERS)) {
+  if (marker.includes('meet') || marker.includes('zoom') || marker.includes('calendar')) {
     return {
       type: 'meeting',
-      confidence: 0.86,
-      extractedText: summarize(input.extractedText, 'Знайшов зустріч. Підготував подію для календаря.'),
+      confidence: 0.82,
+      extractedText: 'Нагадування про зустріч о 14:00 завтра.',
       entities: {
-        suggestedTitle: 'Зустріч зі скріншота',
-        priorityScore: '95'
+        title: 'Зустріч зі скріншота',
+        time: '14:00'
       }
     };
   }
 
-  if (hasAny(marker, SHOPPING_MARKERS)) {
+  if (marker.includes('outfit') || marker.includes('shop') || marker.includes('look')) {
     return {
       type: 'shopping',
-      confidence: 0.8,
-      extractedText: summarize(input.extractedText, 'Товар збережено до wishlist покупок.'),
+      confidence: 0.78,
+      extractedText: 'Образ/товар додано у бажані покупки.',
       entities: {
-        folder: 'Wishlist / Покупки',
-        priorityScore: '72'
+        folder: 'Wishlist / Fashion'
       }
     };
   }
 
-  if (hasAny(marker, MEDIA_MARKERS)) {
+  if (marker.includes('netflix') || marker.includes('spotify') || marker.includes('youtube')) {
     return {
       type: 'media',
-      confidence: 0.8,
-      extractedText: summarize(input.extractedText, 'Додав медіаконтент у список «Подивитись/Послухати».') ,
+      confidence: 0.77,
+      extractedText: 'Контент додано до списку «Подивитись / Послухати».',
       entities: {
-        list: 'Media Wishlist',
-        priorityScore: '70'
+        list: 'Media Wishlist'
       }
     };
   }
 
-  if (hasAny(marker, RECEIPT_MARKERS)) {
+  if (marker.includes('receipt') || marker.includes('invoice') || marker.includes('check')) {
     return {
       type: 'receipt',
-      confidence: 0.77,
-      extractedText: summarize(input.extractedText, 'Розпізнано чек. Можна додати у витрати.'),
+      confidence: 0.75,
+      extractedText: 'Чек знайдено. Суму можна зберегти у витрати.',
       entities: {
-        expenseCategory: 'Автоматично визначити',
-        priorityScore: '82'
+        category: 'Expenses'
       }
     };
   }
 
-  if (hasAny(marker, TRAVEL_MARKERS)) {
+  if (marker.includes('flight') || marker.includes('airbnb') || marker.includes('hotel')) {
     return {
       type: 'travel',
-      confidence: 0.73,
-      extractedText: summarize(input.extractedText, 'Тревел-скрін додано до ідей подорожей.'),
+      confidence: 0.71,
+      extractedText: 'Тревел-ідея збережена в папку подорожей.',
       entities: {
-        board: 'Travel Ideas',
-        priorityScore: '76'
-      }
-    };
-  }
-
-  if (hasAny(marker, IDEA_MARKERS)) {
-    return {
-      type: 'idea',
-      confidence: 0.69,
-      extractedText: summarize(input.extractedText, 'Ідею збережено у базу нотаток.'),
-      entities: {
-        notebook: 'Captured Ideas',
-        priorityScore: '68'
+        board: 'Travel Ideas'
       }
     };
   }
@@ -107,135 +128,80 @@ function detectScreenshotIntent(input: ScreenshotInput): ScreenshotInsight {
   return {
     type: 'unknown',
     confidence: 0.35,
-    extractedText: summarize(input.extractedText, 'Тип скріншота не визначено — поставлено в ручний розбір.'),
-    entities: {
-      priorityScore: '40'
-    }
+    extractedText: 'Поки що неясний тип контенту. Потрібен ручний перегляд.',
+    entities: {}
   };
 }
 
-function toSmartAction(insight: ScreenshotInsight, source: ScreenshotInput, index: number): SmartAction {
+function toSmartAction(insight: ScreenshotInsight, index: number): SmartAction {
   const id = `action-${index}-${Math.round(insight.confidence * 100)}`;
 
   switch (insight.type) {
     case 'social_post':
       return {
         id,
-        source,
-        title: 'Чернетка поста',
+        title: 'Чернетка поста готова',
         description: insight.extractedText,
         actionType: 'draft_post',
         group: 'Контент',
         payload: {
-          priorityScore: insight.entities.priorityScore ?? '60',
-          draftText: source.extractedText || 'Згенеруй post summary + CTA + 3 hashtags.'
+          draftText:
+            'Ось текстова версія поста зі скріншота. Можеш відредагувати і опублікувати у своїй соцмережі.'
         }
       };
     case 'meeting':
       return {
         id,
-        source,
-        title: 'Подія в календар',
+        title: 'Створити подію в календарі',
         description: insight.extractedText,
         actionType: 'create_calendar_event',
         group: 'Планування',
-        payload: {
-          priorityScore: insight.entities.priorityScore ?? '60',
-          title: insight.entities.suggestedTitle ?? 'Зустріч'
-        }
+        payload: insight.entities
       };
     case 'shopping':
       return {
         id,
-        source,
-        title: 'Додати в wishlist',
+        title: 'Додано в бажані покупки',
         description: insight.extractedText,
         actionType: 'add_to_wishlist',
         group: 'Покупки',
-        payload: {
-          priorityScore: insight.entities.priorityScore ?? '60',
-          folder: insight.entities.folder ?? 'Wishlist'
-        }
+        payload: insight.entities
       };
     case 'media':
       return {
         id,
-        source,
-        title: 'Додати у watchlist',
+        title: 'Додано в медіа wishlist',
         description: insight.extractedText,
         actionType: 'add_to_watchlist',
         group: 'Розваги',
-        payload: {
-          priorityScore: insight.entities.priorityScore ?? '60',
-          list: insight.entities.list ?? 'Watchlist'
-        }
+        payload: insight.entities
       };
     case 'receipt':
       return {
         id,
-        source,
         title: 'Зберегти витрату',
         description: insight.extractedText,
         actionType: 'track_expense',
         group: 'Фінанси',
-        payload: {
-          priorityScore: insight.entities.priorityScore ?? '60',
-          category: insight.entities.expenseCategory ?? 'Expenses'
-        }
+        payload: insight.entities
       };
     case 'travel':
       return {
         id,
-        source,
-        title: 'Зберегти travel idea',
+        title: 'Зберегти ідею подорожі',
         description: insight.extractedText,
         actionType: 'save_trip_idea',
         group: 'Подорожі',
-        payload: {
-          priorityScore: insight.entities.priorityScore ?? '60',
-          board: insight.entities.board ?? 'Travel'
-        }
-      };
-    case 'idea':
-      return {
-        id,
-        source,
-        title: 'Зберегти ідею',
-        description: insight.extractedText,
-        actionType: 'capture_idea',
-        group: 'Ідеї',
-        payload: {
-          priorityScore: insight.entities.priorityScore ?? '60',
-          notebook: insight.entities.notebook ?? 'Ideas'
-        }
+        payload: insight.entities
       };
     default:
       return {
         id,
-        source,
-        title: 'Ручний розбір',
+        title: 'Потрібний ручний перегляд',
         description: insight.extractedText,
         actionType: 'manual_review',
         group: 'Невизначене',
-        payload: {
-          priorityScore: insight.entities.priorityScore ?? '40'
-        }
+        payload: {}
       };
   }
-}
-
-function hasAny(text: string, markers: string[]): boolean {
-  return markers.some((marker) => text.includes(marker));
-}
-
-function summarize(text: string, fallback: string): string {
-  if (!text.trim()) {
-    return fallback;
-  }
-
-  if (text.length <= 150) {
-    return text;
-  }
-
-  return `${text.slice(0, 147)}...`;
 }
