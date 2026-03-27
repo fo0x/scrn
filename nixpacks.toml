@@ -1,0 +1,15 @@
+[phases.setup]
+nixPkgs = ["nodejs_20"]
+
+[phases.install]
+cmds = ["npm install --include=dev --no-fund --no-audit"]
+
+[phases.build]
+cmds = [
+  "echo Deploying $(node -p \"require('./package.json').name + '@' + require('./package.json').version\")",
+  "npm run clean",
+  "npm run build"
+]
+
+[start]
+cmd = "npx serve dist -l ${PORT:-3000}"
